@@ -14,7 +14,7 @@ esm_fast/
     ...
 
 # steps to run
-# Download model weights
+### Download model weights
 
 ### 3B
 ```
@@ -27,6 +27,14 @@ curl https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt --outpu
 curl https://dl.fbaipublicfiles.com/fair-esm/regression/esm2_t48_15B_UR50D-contact-regression.pt --output esm2_t48_15B_UR50D-contact-regression.pt
 curl https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t48_15B_UR50D.pt --output esm2_t48_15B_UR50D.pt
 
+```
+
+```bash
+uv venv --python 3.12
+uv pip install -r requirements.txt
+source ./.venv/bin/activate
+cd esm
+python inference.py
 ```
 
 ## model todo list
