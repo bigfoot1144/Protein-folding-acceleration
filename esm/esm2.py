@@ -144,3 +144,5 @@ class ESM2(nn.Module):
 
     def predict_contacts(self, tokens):
         return self(tokens, return_contacts=True)["contacts"]
+
+        
