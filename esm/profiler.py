@@ -20,6 +20,7 @@ def profile_inference():
     model = model.to(device)
     tokens = tokens.to(device)
     model.eval()
+    torch.set_grad_enabled(False)
 
     # Profile with PyTorch profiler
     with profile(
