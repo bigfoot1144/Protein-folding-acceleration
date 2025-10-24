@@ -31,6 +31,7 @@ curl https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t48_15B_UR50D.pt --outp
 ### ESM FOLD
 ```
 curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_3B_v1.pt --output esm_fold_v1.pt
+curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_structure_module_only.pt --output esm_fold_structure.pt
 ```
 
 ```bash

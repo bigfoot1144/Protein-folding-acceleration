@@ -1,2 +1,7 @@
 torch
 numpy
+dm-tree
+Bio
+scipy
+modelcif
+omegaconf
