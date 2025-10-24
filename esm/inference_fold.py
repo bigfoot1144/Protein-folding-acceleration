@@ -528,7 +528,7 @@ masking_pattern = torch.zeros(batch_size, sequence_length).to("cuda")  # No mask
 ## masking_pattern = torch.bernoulli(torch.full((batch_size, sequence_length), 0.1))  # 10% masked
 #
 ## Number of recycles (defaults to 3 if None)
-num_recycles = 1
+num_recycles = 3
 #
 ## Call the forward function
 output = model.forward(
