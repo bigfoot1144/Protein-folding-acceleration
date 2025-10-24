@@ -21,26 +21,130 @@ import torch
 import torch.nn as nn
 from typing import Optional, Tuple, Sequence
 
-from openfold.model.primitives import Linear, LayerNorm, ipa_point_weights_init_
+from torch.nn import Linear
+from torch.nn.functional import layer_norm
+from torch.nn import LayerNorm
+
 from residue_constants import (
     restype_rigid_group_default_frame,
     restype_atom14_to_rigid_group,
     restype_atom14_mask,
     restype_atom14_rigid_group_positions,
 )
-from openfold.utils.feats import (
-    frames_and_literature_positions_to_atom14_pos,
-    torsion_angles_to_frames,
-)
-from openfold.utils.rigid_utils import Rotation, Rigid
-from openfold.utils.tensor_utils import (
+from rigid_utils import Rotation, Rigid
+from tensor_utils import (
     dict_multimap,
     permute_final_dims,
     flatten_final_dims,
 )
 
-attn_core_inplace_cuda = importlib.import_module("attn_core_inplace_cuda")
+def torsion_angles_to_frames(
+    r: Rigid,
+    alpha: torch.Tensor,
+    aatype: torch.Tensor,
+    rrgdf: torch.Tensor,
+):
+    # [*, N, 8, 4, 4]
+    default_4x4 = rrgdf[aatype, ...]
 
+    # [*, N, 8] transformations, i.e.
+    #   One [*, N, 8, 3, 3] rotation matrix and
+    #   One [*, N, 8, 3]    translation matrix
+    default_r = r.from_tensor_4x4(default_4x4)
+
+    bb_rot = alpha.new_zeros((*((1,) * len(alpha.shape[:-1])), 2))
+    bb_rot[..., 1] = 1
+
+    # [*, N, 8, 2]
+    alpha = torch.cat(
+        [bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2
+    )
+
+    # [*, N, 8, 3, 3]
+    # Produces rotation matrices of the form:
+    # [
+    #   [1, 0  , 0  ],
+    #   [0, a_2,-a_1],
+    #   [0, a_1, a_2]
+    # ]
+    # This follows the original code rather than the supplement, which uses
+    # different indices.
+
+    all_rots = alpha.new_zeros(default_r.get_rots().get_rot_mats().shape)
+    all_rots[..., 0, 0] = 1
+    all_rots[..., 1, 1] = alpha[..., 1]
+    all_rots[..., 1, 2] = -alpha[..., 0]
+    all_rots[..., 2, 1:] = alpha
+
+    all_rots = Rigid(Rotation(rot_mats=all_rots), None)
+
+    all_frames = default_r.compose(all_rots)
+
+    chi2_frame_to_frame = all_frames[..., 5]
+    chi3_frame_to_frame = all_frames[..., 6]
+    chi4_frame_to_frame = all_frames[..., 7]
+
+    chi1_frame_to_bb = all_frames[..., 4]
+    chi2_frame_to_bb = chi1_frame_to_bb.compose(chi2_frame_to_frame)
+    chi3_frame_to_bb = chi2_frame_to_bb.compose(chi3_frame_to_frame)
+    chi4_frame_to_bb = chi3_frame_to_bb.compose(chi4_frame_to_frame)
+
+    all_frames_to_bb = Rigid.cat(
+        [
+            all_frames[..., :5],
+            chi2_frame_to_bb.unsqueeze(-1),
+            chi3_frame_to_bb.unsqueeze(-1),
+            chi4_frame_to_bb.unsqueeze(-1),
+        ],
+        dim=-1,
+    )
+
+    all_frames_to_global = r[..., None].compose(all_frames_to_bb)
+
+    return all_frames_to_global
+
+def frames_and_literature_positions_to_atom14_pos(
+    r: Rigid,
+    aatype: torch.Tensor,
+    default_frames,
+    group_idx,
+    atom_mask,
+    lit_positions,
+):
+    # [*, N, 14, 4, 4]
+    default_4x4 = default_frames[aatype, ...]
+
+    # [*, N, 14]
+    group_mask = group_idx[aatype, ...]
+
+    # [*, N, 14, 8]
+    group_mask = nn.functional.one_hot(
+        group_mask,
+        num_classes=default_frames.shape[-3],
+    )
+
+    # [*, N, 14, 8]
+    t_atoms_to_global = r[..., None, :] * group_mask
+
+    # [*, N, 14]
+    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(
+        lambda x: torch.sum(x, dim=-1)
+    )
+
+    # [*, N, 14, 1]
+    atom_mask = atom_mask[aatype, ...].unsqueeze(-1)
+
+    # [*, N, 14, 3]
+    lit_positions = lit_positions[aatype, ...]
+    pred_positions = t_atoms_to_global.apply(lit_positions)
+    pred_positions = pred_positions * atom_mask
+
+    return pred_positions
+
+def ipa_point_weights_init_(weights):
+    with torch.no_grad():
+        softplus_inverse_1 = 0.541324854612918
+        weights.fill_(softplus_inverse_1)
 
 class AngleResnetBlock(nn.Module):
     def __init__(self, c_hidden):
@@ -53,8 +157,8 @@ class AngleResnetBlock(nn.Module):
 
         self.c_hidden = c_hidden
 
-        self.linear_1 = Linear(self.c_hidden, self.c_hidden, init="relu")
-        self.linear_2 = Linear(self.c_hidden, self.c_hidden, init="final")
+        self.linear_1 = Linear(self.c_hidden, self.c_hidden)
+        self.linear_2 = Linear(self.c_hidden, self.c_hidden)
 
         self.relu = nn.ReLU()
 
@@ -221,7 +325,7 @@ class InvariantPointAttention(nn.Module):
         concat_out_dim = self.no_heads * (
             self.c_z + self.c_hidden + self.no_v_points * 4
         )
-        self.linear_out = Linear(concat_out_dim, self.c_s, init="final")
+        self.linear_out = Linear(concat_out_dim, self.c_s)
 
         self.softmax = nn.Softmax(dim=-1)
         self.softplus = nn.Softplus()
@@ -346,20 +450,9 @@ class InvariantPointAttention(nn.Module):
         # [*, H, N_res, N_res]
         pt_att = permute_final_dims(pt_att, (2, 0, 1))
         
-        if(inplace_safe):
-            a += pt_att
-            del pt_att
-            a += square_mask.unsqueeze(-3)
-            # in-place softmax
-            attn_core_inplace_cuda.forward_(
-                a,
-                reduce(mul, a.shape[:-1]),
-                a.shape[-1],
-            )
-        else:
-            a = a + pt_att 
-            a = a + square_mask.unsqueeze(-3)
-            a = self.softmax(a)
+        a = a + pt_att 
+        a = a + square_mask.unsqueeze(-3)
+        a = self.softmax(a)
 
         ################
         # Compute output
@@ -435,7 +528,7 @@ class BackboneUpdate(nn.Module):
 
         self.c_s = c_s
 
-        self.linear = Linear(self.c_s, 6, init="final")
+        self.linear = Linear(self.c_s, 6)
 
     def forward(self, s: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -456,9 +549,9 @@ class StructureModuleTransitionLayer(nn.Module):
 
         self.c = c
 
-        self.linear_1 = Linear(self.c, self.c, init="relu")
-        self.linear_2 = Linear(self.c, self.c, init="relu")
-        self.linear_3 = Linear(self.c, self.c, init="final")
+        self.linear_1 = Linear(self.c, self.c)
+        self.linear_2 = Linear(self.c, self.c)
+        self.linear_3 = Linear(self.c, self.c)
 
         self.relu = nn.ReLU()
 
