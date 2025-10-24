@@ -35,8 +35,8 @@ curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_3B_v1.pt --output es
 
 ```bash
 uv venv --python 3.12
-uv pip install -r requirements.txt
 source ./.venv/bin/activate
+uv pip install -r requirements.txt
 cd esm
 python inference.py
 ```
