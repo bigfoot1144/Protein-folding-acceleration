@@ -29,6 +29,7 @@ def _load_model_and_alphabet_core_v2(model_data):
         alphabet=alphabet,
         token_dropout=cfg.token_dropout,
     )
+    model = torch.compile(model)
     return model, alphabet, state_dict
 
 if __name__ == "__main__":
