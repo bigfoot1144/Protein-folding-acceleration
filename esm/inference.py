@@ -32,7 +32,7 @@ def _load_model_and_alphabet_core_v2(model_data):
     return model, alphabet, state_dict
 
 # Load the main model data
-model_data = torch.load(f'../model/{MODEL_NAME}.pt', 
+model_data = torch.load(f'model/{MODEL_NAME}.pt', 
                         mmap=True, weights_only=False)
 print("Main model loaded")
 
@@ -44,7 +44,7 @@ missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
 print(f"Loaded main model. Missing keys: {missing_keys}")
 
 # Load contact head weights from separate file
-contact_data = torch.load(f'../model/{MODEL_NAME}-contact-regression.pt', 
+contact_data = torch.load(f'model/{MODEL_NAME}-contact-regression.pt', 
                           mmap=True, weights_only=False)
 print("Contact head data loaded")
 
