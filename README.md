@@ -28,6 +28,10 @@ curl https://dl.fbaipublicfiles.com/fair-esm/regression/esm2_t48_15B_UR50D-conta
 curl https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t48_15B_UR50D.pt --output esm2_t48_15B_UR50D.pt
 
 ```
+### ESM FOLD
+```
+curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_3B_v1.pt --output esm_fold_v1.pt
+```
 
 ```bash
 uv venv --python 3.12
