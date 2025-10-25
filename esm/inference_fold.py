@@ -14,6 +14,9 @@ import residue_constants
 
 from typing import Dict, Optional, Tuple
 
+SEQ_FILE = "protein_seq_short.txt"  # File you just created
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 def _calculate_bin_centers(boundaries: torch.Tensor):
     step = boundaries[1] - boundaries[0]
     bin_centers = boundaries + step / 2
@@ -505,32 +508,52 @@ if missing_essential_keys:
     raise RuntimeError(f"Keys '{', '.join(missing_essential_keys)}' are missing.")
 
 model.load_state_dict(model_state, strict=False)
+model.to(DEVICE)
 
-batch_size = 2
-sequence_length = 100
+# Load sequences from file
+sequences = []
+seq_names = []
+# A real protein sequence (Human Insulin)
+sequences = ["MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAEDLQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN"]
 
-model = model.to("cuda")
+# AlphaFold2 vocabulary order, which the model's embedding layer expects
+AF2_VOCAB = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X']
+af2_map = {amino_acid: i for i, amino_acid in enumerate(AF2_VOCAB)}
 
-## Main amino acid sequence tensor - indices for amino acids
-## Based on the docstring, these should match openfold.np.residue_constants.restype_order_with_x
-## Typically amino acid indices range from 0-20 (20 standard amino acids + unknown/mask)
-aa = torch.randint(0, 21, (batch_size, sequence_length)).to("cuda")
-#
-## Optional: create a mask (1 for valid positions, 0 for padding)
-mask = torch.ones(batch_size, sequence_length).to("cuda")
-#
-## Optional: residue indices (if not provided, will be assumed contiguous)
-residx = torch.arange(sequence_length).unsqueeze(0).expand(batch_size, -1).to("cuda")
-#
-## Optional: masking pattern for ESMFold
-masking_pattern = torch.zeros(batch_size, sequence_length).to("cuda")  # No masking
-## Or to randomly mask some positions:
-## masking_pattern = torch.bernoulli(torch.full((batch_size, sequence_length), 0.1))  # 10% masked
-#
-## Number of recycles (defaults to 3 if None)
+# Create a map to translate from ESM's token indices to AlphaFold2's indices
+esm_to_af2_map = torch.full((len(alphabet),), fill_value=af2_map['X'], dtype=torch.long)
+for amino_acid, af2_idx in af2_map.items():
+    if amino_acid in alphabet.tok_to_idx:
+        esm_idx = alphabet.tok_to_idx[amino_acid]
+        esm_to_af2_map[esm_idx] = af2_idx
+esm_to_af2_map = esm_to_af2_map.to(DEVICE)
+
+# --- 3. Tokenize and Convert ---
+
+# Use ESM's batch converter to handle tokenization and padding
+_, _, tokens = alphabet.get_batch_converter()([( "protein1", sequences[0])])
+tokens = tokens.to(DEVICE)
+
+# Slice off the <cls> and <eos> tokens, as they are not part of the sequence
+sequence_tokens = tokens[:, 1:-1]
+
+# Translate from ESM token indices to the required AlphaFold2 indices
+aa = esm_to_af2_map[sequence_tokens]
+
+# Create the mask by identifying non-padding tokens
+mask = (sequence_tokens != alphabet.padding_idx).long()
+
+# --- 4. Prepare for Forward Pass ---
+
+batch_size, sequence_length = aa.shape
+residx = torch.arange(sequence_length, device=DEVICE).unsqueeze(0).expand(batch_size, -1)
 num_recycles = 3
-#
-## Call the forward function
+masking_pattern = torch.zeros(batch_size, sequence_length)  # No masking
+
+print(f"Input 'aa' tensor shape: {aa.shape}")
+print(f"Input 'mask' tensor shape: {mask.shape}")
+
+# Call the forward function
 output = model.forward(
     aa=aa,
     mask=mask,

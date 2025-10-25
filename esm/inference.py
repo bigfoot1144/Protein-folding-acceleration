@@ -125,6 +125,7 @@ for b_idx in range(total):
     if len(mask_positions) == 0:
         continue
     pos_i = mask_positions[0, 0].item()
+    print(pos_i)
 
     # Get logits for the masked token
     mask_logits = logits[b_idx, pos_i]
