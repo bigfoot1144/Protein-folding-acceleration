@@ -1,17 +1,22 @@
 import torch
+torch._logging.set_logs(graph_breaks=True)
 from torch.profiler import profile, record_function, ProfilerActivity
 from inference import _load_model_and_alphabet_core_v2, MODEL_NAME
 import os
+import torch._dynamo as dynamo
+
 
 def profile_inference():
     # Load model and data
     model_data = torch.load(os.path.join('model', f'{MODEL_NAME}.pt'),
                           mmap=True, weights_only=False)
+    print("starting compile")
     model, alphabet, state_dict = _load_model_and_alphabet_core_v2(model_data)
+    print("loading state dict")
     model.load_state_dict(state_dict, strict=False)
     
     # Create sample input
-    sample_seq = "MLSEQLKHCVVVGCGPAGLRTAIDLAKTLQIPEVISAARRTADKVKCVEATDLGFFEPQAASFLK"
+    sample_seq = "GMLSEQLKHCVVVGCGPAGLRTAIDLAKTLQIPEVISAARRTADKVKCVEATDLGFFEPQAASFLK"
     batch = [("sample", sample_seq)]
     _, _, tokens = alphabet.get_batch_converter()(batch)
     
@@ -21,7 +26,11 @@ def profile_inference():
     tokens = tokens.to(device)
     model.eval()
     torch.set_grad_enabled(False)
-
+    print("starting profile")
+    rep = dynamo.explain(model, tokens)
+    with open("graph_break_report.txt", "w") as f:
+        f.write(str(rep))
+    model = torch.compile(model)
     # Profile with PyTorch profiler
     with profile(
         activities=[
@@ -30,7 +39,7 @@ def profile_inference():
         ],
         record_shapes=True,
         profile_memory=True,
-        with_stack=True,
+        with_stack=False,
         with_flops=True
     ) as prof:
         # Warmup
@@ -42,6 +51,7 @@ def profile_inference():
         with record_function("inference"):
             with torch.no_grad():
                 out = model(tokens)
+    
 
     # Print profiling results
     print("\n=== Profile Summary ===")
