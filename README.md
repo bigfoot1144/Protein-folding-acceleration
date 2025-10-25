@@ -31,12 +31,13 @@ curl https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t48_15B_UR50D.pt --outp
 ### ESM FOLD
 ```
 curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_3B_v1.pt --output esm_fold_v1.pt
+curl https://dl.fbaipublicfiles.com/fair-esm/models/esmfold_structure_module_only.pt --output esm_fold_structure.pt
 ```
 
 ```bash
 uv venv --python 3.12
-uv pip install -r requirements.txt
 source ./.venv/bin/activate
+uv pip install -r requirements.txt
 cd esm
 python inference.py
 ```
