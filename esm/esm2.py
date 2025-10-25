@@ -10,6 +10,7 @@ import torch.nn as nn
 from modules import ContactPredictionHead, ESM1bLayerNorm, RobertaLMHead, TransformerLayer
 from data import Alphabet
 
+
 class ESM2(nn.Module):
     def __init__(
         self,
@@ -104,8 +105,8 @@ class ESM2(nn.Module):
         # (B, T, E) => (T, B, E)
         x = x.transpose(0, 1)
 
-        if not padding_mask.any():
-            padding_mask = None
+        # if not padding_mask.any():
+        #     padding_mask = None
 
         for layer_idx, layer in enumerate(self.layers):
             x, attn = layer(
