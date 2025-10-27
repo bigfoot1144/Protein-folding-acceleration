@@ -30,7 +30,7 @@ def profile_inference():
     rep = dynamo.explain(model, tokens)
     with open("graph_break_report.txt", "w") as f:
         f.write(str(rep))
-    model = torch.compile(model)
+    model = torch.compile(model, mode='reduce-overhead', dynamic=True)
     # Profile with PyTorch profiler
     with profile(
         activities=[
