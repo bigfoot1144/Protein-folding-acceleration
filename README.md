@@ -1,4 +1,7 @@
-# 10-24-25 hackathon!
+# Protein Folding Inference Optimization (GPU MODE Hackathon)
+
+## Intro
+Protein Folding models have been around for quite some time now. However, many of the models do not take advantage of new performance optimizations that have arrived in recent years. This repo speeds up inference for a BERT based protein folding model, that goes from 500 ms to 1 ms, a 500x speed up, using graph based optimization tools such as torch.compile
 
 ## project structure
 
